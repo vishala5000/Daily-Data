@@ -2,12 +2,10 @@
 #include <vector>
 #include <string>
 #include <fstream>
-#include <filesystem>
 #include <iomanip>
 #include <ctime>
 #include <sstream>
-
-namespace fs = std::filesystem;
+#include <windows.h> // Native Windows API for Win 7/8/10/11 compatibility
 
 struct Record {
     std::string date;
@@ -32,10 +30,13 @@ std::string getFormattedDate(std::time_t time) {
 std::string getToday() { return getFormattedDate(std::time(nullptr)); }
 std::string getYesterday() { return getFormattedDate(std::time(nullptr) - 86400); }
 
-// Get the directory where the application is running
-fs::path getAppDir(const char* argv0) {
-    fs::path p = fs::path(argv0).parent_path();
-    return p.empty() ? fs::current_path() : p;
+// Get the exact directory where the .exe is running (Native Win32 API)
+std::string getAppDir() {
+    char path[MAX_PATH];
+    GetModuleFileNameA(NULL, path, MAX_PATH);
+    std::string fullPath(path);
+    size_t pos = fullPath.find_last_of("\\/");
+    return (pos == std::string::npos) ? "." : fullPath.substr(0, pos);
 }
 
 void addRecords(std::vector<Record>& records) {
@@ -61,7 +62,7 @@ void addRecords(std::vector<Record>& records) {
         std::cout << "Enter Cash: ";
         std::cin >> r.cash;
         
-        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // Clear buffer
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 
         records.push_back(r);
         std::cout << "\n[Success] Record added for " << r.name << ".\n";
@@ -73,13 +74,13 @@ void addRecords(std::vector<Record>& records) {
     }
 }
 
-void printA4(const std::vector<Record>& records, const fs::path& appDir) {
+void printA4(const std::vector<Record>& records, const std::string& appDir) {
     if (records.empty()) {
         std::cout << "\n[Error] No data to print. Add data first.\n";
         return;
     }
 
-    fs::path htmlFile = appDir / "print_report.html";
+    std::string htmlFile = appDir + "\\print_report.html";
     std::ofstream out(htmlFile);
 
     out << R"(<!DOCTYPE html>
@@ -116,26 +117,20 @@ void printA4(const std::vector<Record>& records, const fs::path& appDir) {
 </body></html>)";
     out.close();
 
-    std::cout << "\n[Success] A4 Print file generated at: " << htmlFile.string() << "\n";
-    std::cout << "Opening print preview... (If it doesn't open, please open the HTML file manually).\n";
+    std::cout << "\n[Success] A4 Print file generated at: " << htmlFile << "\n";
+    std::cout << "Opening print preview...\n";
     
-    // Cross-platform open command
-    #ifdef _WIN32
-        system(("start " + htmlFile.string()).c_str());
-    #elif __APPLE__
-        system(("open " + htmlFile.string()).c_str());
-    #else
-        system(("xdg-open " + htmlFile.string()).c_str());
-    #endif
+    // Native Windows command to open file in default browser
+    system(("start \"\" \"" + htmlFile + "\"").c_str());
 }
 
-void backupData(const std::vector<Record>& records, const fs::path& appDir) {
+void backupData(const std::vector<Record>& records, const std::string& appDir) {
     if (records.empty()) {
         std::cout << "\n[Error] No data to backup.\n";
         return;
     }
 
-    fs::path backupFile = appDir / "data_backup.csv";
+    std::string backupFile = appDir + "\\data_backup.csv";
     std::ofstream out(backupFile);
     out << "Date,Name,Total,Expense,Swipe,QR,Cash\n";
     
@@ -145,7 +140,7 @@ void backupData(const std::vector<Record>& records, const fs::path& appDir) {
             << r.swipe << "," << r.qr << "," << r.cash << "\n";
     }
     out.close();
-    std::cout << "\n[Success] Backup saved to: " << backupFile.string() << "\n";
+    std::cout << "\n[Success] Backup saved to: " << backupFile << "\n";
 }
 
 void viewData(const std::vector<Record>& records) {
@@ -193,15 +188,18 @@ void viewData(const std::vector<Record>& records) {
     if (count == 0) std::cout << "No records found for this date.\n";
 }
 
-int main(int argc, char* argv[]) {
-    fs::path appDir = getAppDir(argv[0]);
+int main() {
+    // Set console output to UTF-8 for better character support
+    SetConsoleOutputCP(65001);
+    
+    std::string appDir = getAppDir();
     std::vector<Record> records;
 
     while (true) {
         std::cout << "\n================ MAIN MENU ================\n";
         std::cout << "1. Add Data (Endless Entry)\n";
         std::cout << "2. Print Data (A4 Size Perfectly Aligned)\n";
-        std::cout << "3. Backup All Data\n";
+        std::cout << "3. Backup All Data (Same Directory)\n";
         std::cout << "4. View Data (Date-wise)\n";
         std::cout << "5. Exit\n";
         std::cout << "===========================================\n";

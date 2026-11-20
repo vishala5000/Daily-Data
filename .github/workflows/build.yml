@@ -24,7 +24,7 @@ jobs:
     - name: Compile Universal App
       shell: msys2 {0}
       run: |
-        mingw32-g++ -static -mwindows -std=c++17 main.cpp -o ExpenseApp.exe -lcomctl32 -lcomdlg32 -lshell32 -lgdi32 -lole32 -luuid
+        g++ -static -mwindows -std=c++17 main.cpp -o ExpenseApp.exe -lcomctl32 -lcomdlg32 -lshell32 -lgdi32 -lole32 -luuid
 
     - name: Upload Universal App
       uses: actions/upload-artifact@v4

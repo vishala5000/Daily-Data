@@ -8,6 +8,9 @@
 #include <iomanip>
 #include <ctime>
 
+// Fix for missing Windows constant
+#define EM_SETBKGNDCOLOR (WM_USER + 1)
+
 // Control IDs
 #define IDC_DATE     101
 #define IDC_NAME     102

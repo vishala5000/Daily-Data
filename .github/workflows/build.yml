@@ -1,4 +1,4 @@
-name: Build Windows App (Win 7/8/10/11)
+name: Build Windows App (32-bit + 64-bit)
 
 on:
   push:
@@ -8,19 +8,28 @@ on:
 
 jobs:
   build:
-    name: Build Windows Executable
+    name: Build ${{ matrix.name }}
     runs-on: windows-latest
-    
+    strategy:
+      matrix:
+        include:
+          - name: "64-bit (x64)"
+            prefix: x86_64-w64-mingw32
+            artifact: ExpenseApp-64bit
+          - name: "32-bit (x86)"
+            prefix: i686-w64-mingw32
+            artifact: ExpenseApp-32bit
+
     steps:
     - uses: actions/checkout@v4
 
-    - name: Compile C++ Code (Statically Linked)
+    - name: Compile ${{ matrix.name }}
       shell: bash
       run: |
-        g++ -static -std=c++17 main.cpp -o ExpenseApp.exe
+        ${{ matrix.prefix }}-g++ -static -mwindows -std=c++17 main.cpp -o ExpenseApp.exe -lcomctl32 -lcomdlg32 -lshell32 -lgdi32 -lole32 -luuid
 
-    - name: Upload Executable Artifact
+    - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: ExpenseApp-Windows
+        name: ${{ matrix.artifact }}
         path: ExpenseApp.exe

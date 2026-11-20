@@ -7,29 +7,45 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build:
-    name: Build ${{ matrix.name }}
+  build-64bit:
+    name: Build 64-bit (x64)
     runs-on: windows-latest
-    strategy:
-      matrix:
-        include:
-          - name: "64-bit (x64)"
-            prefix: x86_64-w64-mingw32
-            artifact: ExpenseApp-64bit
-          - name: "32-bit (x86)"
-            prefix: i686-w64-mingw32
-            artifact: ExpenseApp-32bit
-
+    
     steps:
     - uses: actions/checkout@v4
 
-    - name: Compile ${{ matrix.name }}
+    - name: Compile 64-bit
       shell: bash
       run: |
-        ${{ matrix.prefix }}-g++ -static -mwindows -std=c++17 main.cpp -o ExpenseApp.exe -lcomctl32 -lcomdlg32 -lshell32 -lgdi32 -lole32 -luuid
+        g++ -static -mwindows -std=c++17 main.cpp -o ExpenseApp-64bit.exe -lcomctl32 -lcomdlg32 -lshell32 -lgdi32 -lole32 -luuid
 
-    - name: Upload Artifact
+    - name: Upload 64-bit Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ matrix.artifact }}
-        path: ExpenseApp.exe
+        name: ExpenseApp-64bit
+        path: ExpenseApp-64bit.exe
+
+  build-32bit:
+    name: Build 32-bit (x86)
+    runs-on: windows-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup MSYS2 for 32-bit
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW32
+        install: mingw-w64-i686-gcc
+        update: true
+
+    - name: Compile 32-bit
+      shell: msys2 {0}
+      run: |
+        mingw32-g++ -static -mwindows -std=c++17 main.cpp -o ExpenseApp-32bit.exe -lcomctl32 -lcomdlg32 -lshell32 -lgdi32 -lole32 -luuid
+
+    - name: Upload 32-bit Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ExpenseApp-32bit
+        path: ExpenseApp-32bit.exe

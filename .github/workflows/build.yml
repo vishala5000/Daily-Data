@@ -1,4 +1,4 @@
-name: Build Windows App (32-bit + 64-bit)
+name: Build Universal Windows App
 
 on:
   push:
@@ -7,26 +7,8 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build-64bit:
-    name: Build 64-bit (x64)
-    runs-on: windows-latest
-    
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Compile 64-bit
-      shell: bash
-      run: |
-        g++ -static -mwindows -std=c++17 main.cpp -o ExpenseApp-64bit.exe -lcomctl32 -lcomdlg32 -lshell32 -lgdi32 -lole32 -luuid
-
-    - name: Upload 64-bit Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: ExpenseApp-64bit
-        path: ExpenseApp-64bit.exe
-
-  build-32bit:
-    name: Build 32-bit (x86)
+  build:
+    name: Build Universal 32-bit App (Works on all Windows)
     runs-on: windows-latest
     
     steps:
@@ -39,13 +21,13 @@ jobs:
         install: mingw-w64-i686-gcc
         update: true
 
-    - name: Compile 32-bit
+    - name: Compile Universal App
       shell: msys2 {0}
       run: |
-        mingw32-g++ -static -mwindows -std=c++17 main.cpp -o ExpenseApp-32bit.exe -lcomctl32 -lcomdlg32 -lshell32 -lgdi32 -lole32 -luuid
+        mingw32-g++ -static -mwindows -std=c++17 main.cpp -o ExpenseApp.exe -lcomctl32 -lcomdlg32 -lshell32 -lgdi32 -lole32 -luuid
 
-    - name: Upload 32-bit Artifact
+    - name: Upload Universal App
       uses: actions/upload-artifact@v4
       with:
-        name: ExpenseApp-32bit
-        path: ExpenseApp-32bit.exe
+        name: ExpenseApp-Universal
+        path: ExpenseApp.exe

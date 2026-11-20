@@ -7,6 +7,7 @@
 #include <sstream>
 #include <iomanip>
 #include <ctime>
+#include <algorithm>
 
 // Fix for missing Windows constant
 #define EM_SETBKGNDCOLOR (WM_USER + 1)
@@ -26,6 +27,11 @@
 #define IDC_BTN_FILTER   204
 #define IDC_BTN_SHOWALL  205
 #define IDC_BTN_CLEAR    206
+#define IDC_BTN_RESTORE  207
+#define IDC_BTN_TODAY    208
+#define IDC_BTN_YESTERDAY 209
+#define IDC_BTN_FTODAY   210
+#define IDC_BTN_FYESTERDAY 211
 
 #define IDC_VIEW_DATE 301
 #define IDC_LISTVIEW  401
@@ -49,14 +55,50 @@ std::string GetAppDir() {
     return (pos == std::string::npos) ? "." : fullPath.substr(0, pos);
 }
 
-std::string GetToday() {
-    std::time_t t = std::time(nullptr);
-    std::tm tm = *std::localtime(&t);
+// Format date as DD/MM/YYYY
+std::string GetFormattedDate(std::time_t time) {
+    std::tm tm = *std::localtime(&time);
     std::ostringstream oss;
-    oss << (tm.tm_year + 1900) << '-'
-        << std::setw(2) << std::setfill('0') << (tm.tm_mon + 1) << '-'
-        << std::setw(2) << std::setfill('0') << tm.tm_mday;
+    oss << std::setw(2) << std::setfill('0') << tm.tm_mday << '/'
+        << std::setw(2) << std::setfill('0') << (tm.tm_mon + 1) << '/'
+        << (tm.tm_year + 1900);
     return oss.str();
+}
+
+std::string GetToday() {
+    return GetFormattedDate(std::time(nullptr));
+}
+
+std::string GetYesterday() {
+    return GetFormattedDate(std::time(nullptr) - 86400);
+}
+
+// Convert DD/MM/YYYY to YYYYMMDD integer for comparison
+int DateToInt(const std::string& dateStr) {
+    if (dateStr.length() < 10) return 0;
+    
+    int day = 0, month = 0, year = 0;
+    
+    // Try DD/MM/YYYY format
+    if (dateStr[2] == '/' || dateStr[2] == '-') {
+        try {
+            day = std::stoi(dateStr.substr(0, 2));
+            month = std::stoi(dateStr.substr(3, 2));
+            year = std::stoi(dateStr.substr(6, 4));
+        } catch (...) { return 0; }
+    } 
+    // Try YYYY-MM-DD format (for backward compatibility)
+    else if (dateStr[4] == '-' || dateStr[4] == '/') {
+        try {
+            year = std::stoi(dateStr.substr(0, 4));
+            month = std::stoi(dateStr.substr(5, 2));
+            day = std::stoi(dateStr.substr(8, 2));
+        } catch (...) { return 0; }
+    } else {
+        return 0;
+    }
+    
+    return year * 10000 + month * 100 + day;
 }
 
 std::string GetText(HWND hwnd) {
@@ -102,6 +144,116 @@ void RecalculateCash() {
     SetWindowTextA(hCash, buf);
 }
 
+// ---------- Auto-Save and Auto-Load ----------
+void SaveData() {
+    std::string saveFile = GetAppDir() + "\\daily_cash_data.dat";
+    std::ofstream out(saveFile);
+    if (!out.is_open()) return;
+    
+    for (const auto& r : records) {
+        out << r.date << "|" << r.name << "|" << r.total << "|"
+            << r.expense << "|" << r.swipe << "|" << r.qr << "|" << r.cash << "\n";
+    }
+    out.close();
+}
+
+bool LoadData() {
+    std::string saveFile = GetAppDir() + "\\daily_cash_data.dat";
+    std::ifstream in(saveFile);
+    if (!in.is_open()) return false;
+    
+    records.clear();
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.empty()) continue;
+        
+        std::istringstream iss(line);
+        std::string token;
+        std::vector<std::string> tokens;
+        
+        while (std::getline(iss, token, '|')) {
+            tokens.push_back(token);
+        }
+        
+        if (tokens.size() >= 7) {
+            Record r;
+            r.date = tokens[0];
+            r.name = tokens[1];
+            try {
+                r.total = std::stod(tokens[2]);
+                r.expense = tokens[3];
+                r.swipe = std::stod(tokens[4]);
+                r.qr = std::stod(tokens[5]);
+                r.cash = std::stod(tokens[6]);
+                records.push_back(r);
+            } catch (...) {
+                continue;
+            }
+        }
+    }
+    in.close();
+    return true;
+}
+
+bool LoadFromFile(const std::string& filePath) {
+    std::ifstream in(filePath);
+    if (!in.is_open()) return false;
+    
+    std::vector<Record> tempRecords;
+    std::string line;
+    bool firstLine = true;
+    
+    while (std::getline(in, line)) {
+        if (line.empty()) continue;
+        
+        if (firstLine && (line.find("Date,") == 0 || line.find("Date|") == 0)) {
+            firstLine = false;
+            continue;
+        }
+        firstLine = false;
+        
+        std::istringstream iss(line);
+        std::string token;
+        std::vector<std::string> tokens;
+        
+        while (std::getline(iss, token, '|')) {
+            tokens.push_back(token);
+        }
+        
+        if (tokens.size() < 7) {
+            iss.clear();
+            iss.str(line);
+            tokens.clear();
+            while (std::getline(iss, token, ',')) {
+                tokens.push_back(token);
+            }
+        }
+        
+        if (tokens.size() >= 7) {
+            Record r;
+            r.date = tokens[0];
+            r.name = tokens[1];
+            try {
+                r.total = std::stod(tokens[2]);
+                r.expense = tokens[3];
+                r.swipe = std::stod(tokens[4]);
+                r.qr = std::stod(tokens[5]);
+                r.cash = std::stod(tokens[6]);
+                tempRecords.push_back(r);
+            } catch (...) {
+                continue;
+            }
+        }
+    }
+    in.close();
+    
+    if (!tempRecords.empty()) {
+        records = tempRecords;
+        return true;
+    }
+    return false;
+}
+
 // ---------- ListView Helpers ----------
 void InitListView() {
     ListView_SetExtendedListViewStyle(hListView, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
@@ -110,7 +262,7 @@ void InitListView() {
     col.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
 
     const char* headers[] = {"Date", "Name", "Total", "Expense", "Swipe", "QR", "Cash"};
-    int widths[] = {90, 130, 80, 80, 80, 80, 80};
+    int widths[] = {100, 130, 80, 100, 80, 80, 80};
 
     for (int i = 0; i < 7; i++) {
         col.iSubItem = i;
@@ -120,15 +272,32 @@ void InitListView() {
     }
 }
 
+// Cumulative filter: show all records with date <= filterDate, sorted newest first
 void PopulateList(const std::string& filterDate) {
     SendMessage(hListView, LVM_DELETEALLITEMS, 0, 0);
-    int row = 0;
     
-    double sumTotal = 0, sumExpense = 0, sumSwipe = 0, sumQR = 0, sumCash = 0;
+    // Filter records
+    std::vector<const Record*> filtered;
+    int filterInt = DateToInt(filterDate);
     
     for (const auto& r : records) {
-        if (!filterDate.empty() && r.date != filterDate) continue;
-
+        int recordInt = DateToInt(r.date);
+        if (filterDate.empty() || recordInt <= filterInt) {
+            filtered.push_back(&r);
+        }
+    }
+    
+    // Sort by date descending (newest first)
+    std::sort(filtered.begin(), filtered.end(), [](const Record* a, const Record* b) {
+        return DateToInt(a->date) > DateToInt(b->date);
+    });
+    
+    int row = 0;
+    double sumTotal = 0, sumExpense = 0, sumSwipe = 0, sumQR = 0, sumCash = 0;
+    
+    for (const auto* rPtr : filtered) {
+        const Record& r = *rPtr;
+        
         LVITEMA item = {0};
         item.mask = LVIF_TEXT;
         item.iItem = row;
@@ -143,21 +312,16 @@ void PopulateList(const std::string& filterDate) {
         o4 << std::fixed << std::setprecision(2) << r.qr;
         o5 << std::fixed << std::setprecision(2) << r.cash;
 
-        const std::string cols[] = {r.name, r.expense, o1.str(), o3.str(), o4.str(), o5.str()};
-        
-        // Set Name
         LVITEMA sub = {0};
         sub.iItem = row;
         sub.iSubItem = 1;
         sub.pszText = (LPSTR)r.name.c_str();
         SendMessageA(hListView, LVM_SETITEMTEXTA, row, (LPARAM)&sub);
         
-        // Set Expense (text)
         sub.iSubItem = 3;
         sub.pszText = (LPSTR)r.expense.c_str();
         SendMessageA(hListView, LVM_SETITEMTEXTA, row, (LPARAM)&sub);
         
-        // Set numeric columns
         const std::string numCols[] = {o1.str(), o2.str(), o3.str(), o4.str(), o5.str()};
         for (int c = 0; c < 5; c++) {
             int colIdx = (c == 0) ? 2 : (c + 2);
@@ -254,9 +418,9 @@ void DoAddRecord(HWND hwnd) {
     }
 
     records.push_back(r);
+    SaveData();
     PopulateList(GetText(hViewDate));
 
-    // Clear inputs
     SetWindowTextA(hName, "");
     SetWindowTextA(hTotal, "");
     SetWindowTextA(hExp, "");
@@ -276,6 +440,21 @@ void DoPrintA4(HWND hwnd) {
     std::string htmlFile = GetAppDir() + "\\print_report.html";
     std::ofstream out(htmlFile);
     
+    // Filter and sort records
+    std::vector<const Record*> filtered;
+    int filterInt = DateToInt(filterDate);
+    
+    for (const auto& r : records) {
+        int recordInt = DateToInt(r.date);
+        if (filterDate.empty() || recordInt <= filterInt) {
+            filtered.push_back(&r);
+        }
+    }
+    
+    std::sort(filtered.begin(), filtered.end(), [](const Record* a, const Record* b) {
+        return DateToInt(a->date) > DateToInt(b->date);
+    });
+    
     out << R"(<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Daily Cash Entry</title><style>
     @page { size: A4; margin: 1.5cm; }
     body { font-family: Arial, sans-serif; color: #222; }
@@ -289,8 +468,8 @@ void DoPrintA4(HWND hwnd) {
     
     double sumTotal = 0, sumExpense = 0, sumSwipe = 0, sumQR = 0, sumCash = 0;
     
-    for (const auto& r : records) {
-        if (!filterDate.empty() && r.date != filterDate) continue;
+    for (const auto* rPtr : filtered) {
+        const Record& r = *rPtr;
         out << "<tr><td>" << r.date << "</td><td>" << r.name << "</td>"
             << "<td>" << std::fixed << std::setprecision(2) << r.total << "</td>"
             << "<td>" << r.expense << "</td>"
@@ -333,6 +512,29 @@ void DoBackup(HWND hwnd) {
     MessageBoxA(hwnd, "Backup saved successfully in the app folder!", "Success", MB_ICONINFORMATION);
 }
 
+void DoRestoreBackup(HWND hwnd) {
+    char fileName[MAX_PATH] = "";
+    
+    OPENFILENAMEA ofn = {0};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = hwnd;
+    ofn.lpstrFilter = "Data Files (*.dat;*.csv)\0*.dat;*.csv\0All Files (*.*)\0*.*\0";
+    ofn.lpstrFile = fileName;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+    ofn.lpstrTitle = "Select Backup File to Restore";
+    
+    if (GetOpenFileNameA(&ofn)) {
+        if (LoadFromFile(fileName)) {
+            SaveData();
+            PopulateList(GetText(hViewDate));
+            MessageBoxA(hwnd, "Backup restored successfully!", "Success", MB_ICONINFORMATION);
+        } else {
+            MessageBoxA(hwnd, "Failed to load backup file.", "Error", MB_ICONERROR);
+        }
+    }
+}
+
 // ---------- Window Procedure ----------
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
@@ -348,13 +550,16 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
             int x = 20, y = 20, lblW = 70, editW = 110, editH = 26, gap = 10;
 
-            // Row 1
+            // Row 1: Date with Today/Yesterday buttons
             CreateLabel(hwnd, "Date:", x, y, lblW, editH);
             hDate = CreateEdit(hwnd, x + lblW, y, editW, editH, IDC_DATE);
             SetWindowTextA(hDate, GetToday().c_str());
+            
+            CreateBtn(hwnd, "Today",     x + lblW + editW + 5,  y, 60, editH, IDC_BTN_TODAY);
+            CreateBtn(hwnd, "Yesterday", x + lblW + editW + 70, y, 80, editH, IDC_BTN_YESTERDAY);
 
-            CreateLabel(hwnd, "Name:", x + lblW + editW + gap, y, lblW, editH);
-            hName = CreateEdit(hwnd, x + 2*lblW + editW + gap, y, 180, editH, IDC_NAME);
+            CreateLabel(hwnd, "Name:", x + lblW + editW + 160, y, lblW, editH);
+            hName = CreateEdit(hwnd, x + 2*lblW + editW + 160, y, 180, editH, IDC_NAME);
 
             // Row 2
             y += 40;
@@ -365,23 +570,27 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             for (int i = 0; i < 5; i++) {
                 int cx = x + i * (lblW + editW + gap);
                 CreateLabel(hwnd, labels[i], cx, y, lblW, editH);
-                bool readOnly = (i == 4); // Cash is read-only
+                bool readOnly = (i == 4);
                 *(handles[i]) = CreateEdit(hwnd, cx + lblW, y, editW, editH, ids[i], readOnly);
             }
 
             // Buttons row
             y += 45;
-            CreateBtn(hwnd, "Add Record",     x,       y, 130, 32, IDC_BTN_ADD);
-            CreateBtn(hwnd, "Print A4",       x + 140, y, 130, 32, IDC_BTN_PRINT);
-            CreateBtn(hwnd, "Backup Data",    x + 280, y, 130, 32, IDC_BTN_BACKUP);
-            CreateBtn(hwnd, "Clear All",      x + 420, y, 130, 32, IDC_BTN_CLEAR);
+            int btnW = 120;
+            CreateBtn(hwnd, "Add Record",     x,              y, btnW, 32, IDC_BTN_ADD);
+            CreateBtn(hwnd, "Print A4",       x + btnW + 10,  y, btnW, 32, IDC_BTN_PRINT);
+            CreateBtn(hwnd, "Backup Data",    x + 2*(btnW+10), y, btnW, 32, IDC_BTN_BACKUP);
+            CreateBtn(hwnd, "Restore Backup", x + 3*(btnW+10), y, btnW, 32, IDC_BTN_RESTORE);
+            CreateBtn(hwnd, "Clear All",      x + 4*(btnW+10), y, btnW, 32, IDC_BTN_CLEAR);
 
-            // Filter row
+            // Filter row with Today/Yesterday buttons
             y += 50;
-            CreateLabel(hwnd, "Filter by Date:", x, y, 110, editH);
-            hViewDate = CreateEdit(hwnd, x + 110, y, 140, editH, IDC_VIEW_DATE);
-            CreateBtn(hwnd, "Filter",     x + 260, y, 90, editH, IDC_BTN_FILTER);
-            CreateBtn(hwnd, "Show All",   x + 360, y, 90, editH, IDC_BTN_SHOWALL);
+            CreateLabel(hwnd, "View up to Date:", x, y, 120, editH);
+            hViewDate = CreateEdit(hwnd, x + 120, y, 120, editH, IDC_VIEW_DATE);
+            CreateBtn(hwnd, "Today",     x + 250, y, 60, editH, IDC_BTN_FTODAY);
+            CreateBtn(hwnd, "Yesterday", x + 315, y, 80, editH, IDC_BTN_FYESTERDAY);
+            CreateBtn(hwnd, "Show View", x + 405, y, 90, editH, IDC_BTN_FILTER);
+            CreateBtn(hwnd, "Show All",  x + 505, y, 90, editH, IDC_BTN_SHOWALL);
 
             // ListView
             y += 40;
@@ -390,13 +599,16 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 x, y, 840, 340, hwnd, (HMENU)(INT_PTR)IDC_LISTVIEW, NULL, NULL);
             SendMessage(hListView, WM_SETFONT, (WPARAM)hFont, TRUE);
             InitListView();
+            
+            LoadData();
+            PopulateList("");
+            
             return 0;
         }
         case WM_COMMAND: {
             int id = LOWORD(wParam);
             int code = HIWORD(wParam);
             
-            // Auto-calculate Cash when inputs change
             if (code == EN_CHANGE && (id == IDC_TOTAL || id == IDC_EXP || id == IDC_SWIPE || id == IDC_QR)) {
                 RecalculateCash();
             }
@@ -404,7 +616,24 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             if (id == IDC_BTN_ADD)     DoAddRecord(hwnd);
             else if (id == IDC_BTN_PRINT)   DoPrintA4(hwnd);
             else if (id == IDC_BTN_BACKUP)  DoBackup(hwnd);
-            else if (id == IDC_BTN_FILTER)  PopulateList(GetText(hViewDate));
+            else if (id == IDC_BTN_RESTORE) DoRestoreBackup(hwnd);
+            else if (id == IDC_BTN_TODAY) {
+                SetWindowTextA(hDate, GetToday().c_str());
+            }
+            else if (id == IDC_BTN_YESTERDAY) {
+                SetWindowTextA(hDate, GetYesterday().c_str());
+            }
+            else if (id == IDC_BTN_FTODAY) {
+                SetWindowTextA(hViewDate, GetToday().c_str());
+                PopulateList(GetToday());
+            }
+            else if (id == IDC_BTN_FYESTERDAY) {
+                SetWindowTextA(hViewDate, GetYesterday().c_str());
+                PopulateList(GetYesterday());
+            }
+            else if (id == IDC_BTN_FILTER)  {
+                PopulateList(GetText(hViewDate));
+            }
             else if (id == IDC_BTN_SHOWALL) {
                 SetWindowTextA(hViewDate, "");
                 PopulateList("");
@@ -413,6 +642,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 if (MessageBoxA(hwnd, "Clear ALL records from memory?", "Confirm",
                                 MB_YESNO | MB_ICONQUESTION) == IDYES) {
                     records.clear();
+                    SaveData();
                     PopulateList(GetText(hViewDate));
                 }
             }

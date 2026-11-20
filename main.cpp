@@ -5,8 +5,84 @@
 #include <iomanip>
 #include <ctime>
 #include <sstream>
-#include <limits>   // <--- ADDED THIS TO FIX THE ERROR
+#include <limits>
 #include <windows.h>
+
+// UI Color Codes for Windows Console
+// 11 = Light Cyan, 14 = Light Yellow, 10 = Light Green, 12 = Light Red, 15 = White, 8 = Dark Gray
+
+HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+
+void SetColor(WORD color) {
+    SetConsoleTextAttribute(hConsole, color);
+}
+
+void ClearScreen() {
+    system("cls");
+}
+
+void InitConsole() {
+    SetConsoleTitleA("Expense Manager Pro");
+    system("mode con cols=95 lines=40");
+    // 1F = Blue Background, Bright White Text. Gives a modern dark-theme look.
+    system("color 1F"); 
+    SetConsoleOutputCP(65001); 
+}
+
+void PrintHeader() {
+    SetColor(11); 
+    std::cout << "\n";
+    std::cout << "  =====================================================================\n";
+    std::cout << "  ||                                                                 ||\n";
+    std::cout << "  ||                 $$  EXPENSE MANAGER PRO  $$                     ||\n";
+    std::cout << "  ||                                                                 ||\n";
+    std::cout << "  =====================================================================\n";
+    SetColor(15); 
+}
+
+void PrintMenu() {
+    ClearScreen();
+    PrintHeader();
+    
+    SetColor(14); 
+    std::cout << "\n  [1] [+] Add Data (Endless Entry)\n";
+    std::cout << "  [2] [P] Print Data (A4 Size Perfectly Aligned)\n";
+    std::cout << "  [3] [B] Backup All Data (Same Directory)\n";
+    std::cout << "  [4] [V] View Data (Date-wise)\n";
+    std::cout << "  [5] [X] Exit\n";
+    
+    SetColor(8); 
+    std::cout << "\n  ---------------------------------------------------------------------\n";
+    
+    SetColor(15); 
+    std::cout << "  >>> Enter your choice (1-5): ";
+}
+
+void PrintSuccess(const std::string& msg) {
+    SetColor(10); 
+    std::cout << "\n  [SUCCESS] " << msg << "\n";
+    SetColor(15);
+}
+
+void PrintError(const std::string& msg) {
+    SetColor(12); 
+    std::cout << "\n  [ERROR] " << msg << "\n";
+    SetColor(15);
+}
+
+void PrintInfo(const std::string& msg) {
+    SetColor(11); 
+    std::cout << "\n  [INFO] " << msg << "\n";
+    SetColor(15);
+}
+
+void Pause() {
+    SetColor(8);
+    std::cout << "\n  Press Enter to return to main menu...";
+    SetColor(15);
+    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    std::cin.get();
+}
 
 struct Record {
     std::string date;
@@ -39,43 +115,62 @@ std::string getAppDir() {
 }
 
 void addRecords(std::vector<Record>& records) {
-    std::cout << "\n--- ADD NEW DATA ---\n";
+    ClearScreen();
+    PrintHeader();
+    SetColor(14);
+    std::cout << "\n  --- [+] ADD NEW DATA ---\n";
+    SetColor(15);
+    
     bool keepAdding = true;
     while (keepAdding) {
         Record r;
-        std::cout << "Enter Date (YYYY-MM-DD) [Press Enter for Today]: ";
+        SetColor(11);
+        std::cout << "\n  > Enter Date (YYYY-MM-DD) [Press Enter for Today]: ";
+        SetColor(15);
         std::getline(std::cin, r.date);
         if (r.date.empty()) r.date = getToday();
 
-        std::cout << "Enter Name: ";
+        SetColor(11);
+        std::cout << "  > Enter Name: ";
+        SetColor(15);
         std::getline(std::cin, r.name);
 
-        std::cout << "Enter Total: ";
-        std::cin >> r.total;
-        std::cout << "Enter Expense: ";
-        std::cin >> r.expense;
-        std::cout << "Enter Swipe: ";
-        std::cin >> r.swipe;
-        std::cout << "Enter QR: ";
-        std::cin >> r.qr;
-        std::cout << "Enter Cash: ";
-        std::cin >> r.cash;
+        auto getDouble = [](const std::string& prompt) {
+            double val = 0;
+            SetColor(11);
+            std::cout << "  > " << prompt << ": ";
+            SetColor(15);
+            std::cin >> val;
+            return val;
+        };
+
+        r.total = getDouble("Enter Total");
+        r.expense = getDouble("Enter Expense");
+        r.swipe = getDouble("Enter Swipe");
+        r.qr = getDouble("Enter QR");
+        r.cash = getDouble("Enter Cash");
         
         std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 
         records.push_back(r);
-        std::cout << "\n[Success] Record added for " << r.name << ".\n";
+        PrintSuccess("Record added for " + r.name + ".");
 
-        std::cout << "Add another person? (y/n): ";
+        SetColor(14);
+        std::cout << "\n  > Add another person? (y/n): ";
+        SetColor(15);
         std::string choice;
         std::getline(std::cin, choice);
         if (choice != "y" && choice != "Y") keepAdding = false;
     }
+    Pause();
 }
 
 void printA4(const std::vector<Record>& records, const std::string& appDir) {
+    ClearScreen();
+    PrintHeader();
     if (records.empty()) {
-        std::cout << "\n[Error] No data to print. Add data first.\n";
+        PrintError("No data to print. Add data first.");
+        Pause();
         return;
     }
 
@@ -116,14 +211,18 @@ void printA4(const std::vector<Record>& records, const std::string& appDir) {
 </body></html>)";
     out.close();
 
-    std::cout << "\n[Success] A4 Print file generated at: " << htmlFile << "\n";
-    std::cout << "Opening print preview...\n";
+    PrintSuccess("A4 Print file generated at: " + htmlFile);
+    PrintInfo("Opening print preview in your default browser...");
     system(("start \"\" \"" + htmlFile + "\"").c_str());
+    Pause();
 }
 
 void backupData(const std::vector<Record>& records, const std::string& appDir) {
+    ClearScreen();
+    PrintHeader();
     if (records.empty()) {
-        std::cout << "\n[Error] No data to backup.\n";
+        PrintError("No data to backup.");
+        Pause();
         return;
     }
 
@@ -137,15 +236,25 @@ void backupData(const std::vector<Record>& records, const std::string& appDir) {
             << r.swipe << "," << r.qr << "," << r.cash << "\n";
     }
     out.close();
-    std::cout << "\n[Success] Backup saved to: " << backupFile << "\n";
+    
+    PrintSuccess("Backup saved to: " + backupFile);
+    Pause();
 }
 
 void viewData(const std::vector<Record>& records) {
-    std::cout << "\n--- VIEW DATA ---\n";
-    std::cout << "1. Today (" << getToday() << ")\n";
-    std::cout << "2. Yesterday (" << getYesterday() << ")\n";
-    std::cout << "3. Specific Date (YYYY-MM-DD)\n";
-    std::cout << "Choose option: ";
+    ClearScreen();
+    PrintHeader();
+    SetColor(14);
+    std::cout << "\n  --- [V] VIEW DATA ---\n";
+    SetColor(15);
+    
+    std::cout << "\n  [1] Today (" << getToday() << ")\n";
+    std::cout << "  [2] Yesterday (" << getYesterday() << ")\n";
+    std::cout << "  [3] Specific Date (YYYY-MM-DD)\n";
+    
+    SetColor(11);
+    std::cout << "\n  >>> Choose option: ";
+    SetColor(15);
     
     int choice;
     std::cin >> choice;
@@ -155,24 +264,34 @@ void viewData(const std::vector<Record>& records) {
     if (choice == 1) targetDate = getToday();
     else if (choice == 2) targetDate = getYesterday();
     else {
-        std::cout << "Enter Date (YYYY-MM-DD): ";
+        SetColor(11);
+        std::cout << "  > Enter Date (YYYY-MM-DD): ";
+        SetColor(15);
         std::getline(std::cin, targetDate);
     }
 
-    std::cout << "\n--- Records for " << targetDate << " ---\n";
-    std::cout << std::left << std::setw(12) << "Date" 
+    ClearScreen();
+    PrintHeader();
+    SetColor(14);
+    std::cout << "\n  --- Records for " << targetDate << " ---\n";
+    SetColor(8);
+    std::cout << "  ---------------------------------------------------------------------\n";
+    SetColor(11);
+    std::cout << std::left << std::setw(12) << "  Date" 
               << std::setw(15) << "Name" 
               << std::setw(10) << "Total" 
               << std::setw(10) << "Exp" 
               << std::setw(10) << "Swipe" 
               << std::setw(10) << "QR" 
               << std::setw(10) << "Cash" << "\n";
-    std::cout << std::string(77, '-') << "\n";
+    SetColor(8);
+    std::cout << "  ---------------------------------------------------------------------\n";
+    SetColor(15);
 
     int count = 0;
     for (const auto& r : records) {
         if (r.date == targetDate) {
-            std::cout << std::left << std::setw(12) << r.date 
+            std::cout << std::left << std::setw(12) << "  " + r.date 
                       << std::setw(15) << r.name 
                       << std::setw(10) << r.total 
                       << std::setw(10) << r.expense 
@@ -182,24 +301,22 @@ void viewData(const std::vector<Record>& records) {
             count++;
         }
     }
-    if (count == 0) std::cout << "No records found for this date.\n";
+    if (count == 0) {
+        PrintError("No records found for this date.");
+    } else {
+        PrintSuccess("Found " + std::to_string(count) + " record(s).");
+    }
+    Pause();
 }
 
 int main() {
-    SetConsoleOutputCP(65001);
+    InitConsole();
     
     std::string appDir = getAppDir();
     std::vector<Record> records;
 
     while (true) {
-        std::cout << "\n================ MAIN MENU ================\n";
-        std::cout << "1. Add Data (Endless Entry)\n";
-        std::cout << "2. Print Data (A4 Size Perfectly Aligned)\n";
-        std::cout << "3. Backup All Data (Same Directory)\n";
-        std::cout << "4. View Data (Date-wise)\n";
-        std::cout << "5. Exit\n";
-        std::cout << "===========================================\n";
-        std::cout << "Enter your choice: ";
+        PrintMenu();
 
         int choice;
         std::cin >> choice;
@@ -210,12 +327,20 @@ int main() {
         else if (choice == 3) backupData(records, appDir);
         else if (choice == 4) viewData(records);
         else if (choice == 5) {
-            std::cout << "Exiting program. Goodbye!\n";
+            ClearScreen();
+            PrintHeader();
+            SetColor(14);
+            std::cout << "\n  Exiting program. Goodbye!\n\n";
+            SetColor(15);
             break;
         }
         else {
-            std::cout << "[Error] Invalid choice. Please try again.\n";
+            PrintError("Invalid choice. Please try again.");
+            Pause();
         }
     }
+    
+    // Reset console colors to default before exiting
+    system("color 07");
     return 0;
 }

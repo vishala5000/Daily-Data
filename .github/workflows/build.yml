@@ -1,1 +1,39 @@
+name: Build C++ Application
 
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            artifact_name: ExpenseApp-Linux
+            executable_name: ExpenseApp
+          - os: windows-latest
+            artifact_name: ExpenseApp-Windows
+            executable_name: ExpenseApp.exe
+          - os: macos-latest
+            artifact_name: ExpenseApp-MacOS
+            executable_name: ExpenseApp
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Compile C++ Code
+      shell: bash
+      run: |
+        g++ -std=c++17 main.cpp -o ${{ matrix.executable_name }}
+
+    - name: Upload Executable Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.artifact_name }}
+        path: ${{ matrix.executable_name }}

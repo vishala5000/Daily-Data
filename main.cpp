@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <ctime>
 #include <sstream>
+#include <limits>   // <--- ADDED THIS TO FIX THE ERROR
 #include <windows.h>
 
 struct Record {

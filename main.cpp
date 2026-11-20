@@ -28,8 +28,8 @@
 #define IDC_LISTVIEW  401
 
 struct Record {
-    std::string date, name;
-    double total, expense, swipe, qr, cash;
+    std::string date, name, expense;
+    double total, swipe, qr, cash;
 };
 
 std::vector<Record> records;
@@ -70,6 +70,35 @@ double GetDouble(HWND hwnd) {
     try { return std::stod(text); } catch (...) { return 0.0; }
 }
 
+// Extract number from text like "Refund 500" -> 500
+double ExtractNumber(const std::string& text) {
+    if (text.empty()) return 0.0;
+    int i = (int)text.length() - 1;
+    while (i >= 0 && !isdigit(text[i]) && text[i] != '.') i--;
+    if (i < 0) return 0.0;
+    int end = i + 1;
+    while (i >= 0 && (isdigit(text[i]) || text[i] == '.')) i--;
+    int start = i + 1;
+    try {
+        return std::stod(text.substr(start, end - start));
+    } catch (...) {
+        return 0.0;
+    }
+}
+
+// Auto-calculate Cash
+void RecalculateCash() {
+    double total = GetDouble(hTotal);
+    double expense = ExtractNumber(GetText(hExp));
+    double swipe = GetDouble(hSwipe);
+    double qr = GetDouble(hQR);
+    double cash = total - expense - swipe - qr;
+    
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%.2f", cash);
+    SetWindowTextA(hCash, buf);
+}
+
 // ---------- ListView Helpers ----------
 void InitListView() {
     ListView_SetExtendedListViewStyle(hListView, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
@@ -91,6 +120,9 @@ void InitListView() {
 void PopulateList(const std::string& filterDate) {
     SendMessage(hListView, LVM_DELETEALLITEMS, 0, 0);
     int row = 0;
+    
+    double sumTotal = 0, sumExpense = 0, sumSwipe = 0, sumQR = 0, sumCash = 0;
+    
     for (const auto& r : records) {
         if (!filterDate.empty() && r.date != filterDate) continue;
 
@@ -101,34 +133,74 @@ void PopulateList(const std::string& filterDate) {
         item.pszText = (LPSTR)r.date.c_str();
         SendMessageA(hListView, LVM_INSERTITEMA, 0, (LPARAM)&item);
 
-        std::ostringstream oss;
-        oss << std::fixed << std::setprecision(2);
-        const std::string cols[] = {
-            r.name,
-            oss.str() + std::to_string(r.total),
-            std::to_string(r.expense),
-            std::to_string(r.swipe),
-            std::to_string(r.qr),
-            std::to_string(r.cash)
-        };
-        // Re-format properly
         std::ostringstream o1, o2, o3, o4, o5;
         o1 << std::fixed << std::setprecision(2) << r.total;
-        o2 << std::fixed << std::setprecision(2) << r.expense;
+        o2 << std::fixed << std::setprecision(2) << ExtractNumber(r.expense);
         o3 << std::fixed << std::setprecision(2) << r.swipe;
         o4 << std::fixed << std::setprecision(2) << r.qr;
         o5 << std::fixed << std::setprecision(2) << r.cash;
 
-        const std::string finalCols[] = {r.name, o1.str(), o2.str(), o3.str(), o4.str(), o5.str()};
-
-        for (int c = 1; c < 7; c++) {
-            LVITEMA sub = {0};
-            sub.iItem = row;
-            sub.iSubItem = c;
-            sub.pszText = (LPSTR)finalCols[c-1].c_str();
+        const std::string cols[] = {r.name, r.expense, o1.str(), o3.str(), o4.str(), o5.str()};
+        
+        // Set Name
+        LVITEMA sub = {0};
+        sub.iItem = row;
+        sub.iSubItem = 1;
+        sub.pszText = (LPSTR)r.name.c_str();
+        SendMessageA(hListView, LVM_SETITEMTEXTA, row, (LPARAM)&sub);
+        
+        // Set Expense (text)
+        sub.iSubItem = 3;
+        sub.pszText = (LPSTR)r.expense.c_str();
+        SendMessageA(hListView, LVM_SETITEMTEXTA, row, (LPARAM)&sub);
+        
+        // Set numeric columns
+        const std::string numCols[] = {o1.str(), o2.str(), o3.str(), o4.str(), o5.str()};
+        for (int c = 0; c < 5; c++) {
+            int colIdx = (c == 0) ? 2 : (c + 2);
+            sub.iSubItem = colIdx;
+            sub.pszText = (LPSTR)numCols[c].c_str();
             SendMessageA(hListView, LVM_SETITEMTEXTA, row, (LPARAM)&sub);
         }
+        
+        sumTotal += r.total;
+        sumExpense += ExtractNumber(r.expense);
+        sumSwipe += r.swipe;
+        sumQR += r.qr;
+        sumCash += r.cash;
+        
         row++;
+    }
+    
+    // Add Total row
+    if (row > 0) {
+        LVITEMA item = {0};
+        item.mask = LVIF_TEXT;
+        item.iItem = row;
+        item.iSubItem = 0;
+        item.pszText = (LPSTR)"";
+        SendMessageA(hListView, LVM_INSERTITEMA, 0, (LPARAM)&item);
+        
+        std::ostringstream o1, o2, o3, o4, o5;
+        o1 << std::fixed << std::setprecision(2) << sumTotal;
+        o2 << std::fixed << std::setprecision(2) << sumExpense;
+        o3 << std::fixed << std::setprecision(2) << sumSwipe;
+        o4 << std::fixed << std::setprecision(2) << sumQR;
+        o5 << std::fixed << std::setprecision(2) << sumCash;
+        
+        LVITEMA sub = {0};
+        sub.iItem = row;
+        
+        sub.iSubItem = 1;
+        sub.pszText = (LPSTR)"Total";
+        SendMessageA(hListView, LVM_SETITEMTEXTA, row, (LPARAM)&sub);
+        
+        const std::string totals[] = {o1.str(), o2.str(), o3.str(), o4.str(), o5.str()};
+        for (int c = 0; c < 5; c++) {
+            sub.iSubItem = c + 2;
+            sub.pszText = (LPSTR)totals[c].c_str();
+            SendMessageA(hListView, LVM_SETITEMTEXTA, row, (LPARAM)&sub);
+        }
     }
 }
 
@@ -140,11 +212,15 @@ HWND CreateLabel(HWND p, const char* t, int x, int y, int w, int h) {
     return hw;
 }
 
-HWND CreateEdit(HWND p, int x, int y, int w, int h, int id) {
-    HWND hw = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "",
-                              WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
+HWND CreateEdit(HWND p, int x, int y, int w, int h, int id, bool readOnly = false) {
+    DWORD style = WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL;
+    if (readOnly) style |= ES_READONLY;
+    HWND hw = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "", style,
                               x, y, w, h, p, (HMENU)(INT_PTR)id, NULL, NULL);
     SendMessage(hw, WM_SETFONT, (WPARAM)hFont, TRUE);
+    if (readOnly) {
+        SendMessage(hw, EM_SETBKGNDCOLOR, 0, RGB(240, 240, 240));
+    }
     return hw;
 }
 
@@ -163,10 +239,10 @@ void DoAddRecord(HWND hwnd) {
     if (r.date.empty()) r.date = GetToday();
     r.name = GetText(hName);
     r.total   = GetDouble(hTotal);
-    r.expense = GetDouble(hExp);
+    r.expense = GetText(hExp);
     r.swipe   = GetDouble(hSwipe);
     r.qr      = GetDouble(hQR);
-    r.cash    = GetDouble(hCash);
+    r.cash    = r.total - ExtractNumber(r.expense) - r.swipe - r.qr;
 
     if (r.name.empty()) {
         MessageBoxA(hwnd, "Please enter a Name.", "Missing Info", MB_ICONWARNING);
@@ -192,25 +268,47 @@ void DoPrintA4(HWND hwnd) {
         MessageBoxA(hwnd, "No data to print.", "Info", MB_ICONINFORMATION);
         return;
     }
+    
+    std::string filterDate = GetText(hViewDate);
     std::string htmlFile = GetAppDir() + "\\print_report.html";
     std::ofstream out(htmlFile);
-    out << R"(<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Expense Report</title><style>
+    
+    out << R"(<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Daily Cash Entry</title><style>
     @page { size: A4; margin: 1.5cm; }
-    body { font-family: Arial, sans-serif; text-align: center; color: #222; }
-    h2 { margin-bottom: 20px; }
+    body { font-family: Arial, sans-serif; color: #222; }
     table { margin: 0 auto; border-collapse: collapse; width: 100%; max-width: 800px; }
     th, td { border: 1px solid #000; padding: 10px; text-align: center; }
     th { background-color: #e8e8e8; font-weight: bold; }
+    .total-row { font-weight: bold; background-color: #f0f0f0; }
     </style></head><body>
-    <h2>Daily Expense & Collection Report</h2>
     <table>
     <tr><th>Date</th><th>Name</th><th>Total</th><th>Expense</th><th>Swipe</th><th>QR</th><th>Cash</th></tr>)";
+    
+    double sumTotal = 0, sumExpense = 0, sumSwipe = 0, sumQR = 0, sumCash = 0;
+    
     for (const auto& r : records) {
+        if (!filterDate.empty() && r.date != filterDate) continue;
         out << "<tr><td>" << r.date << "</td><td>" << r.name << "</td>"
             << "<td>" << std::fixed << std::setprecision(2) << r.total << "</td>"
-            << "<td>" << r.expense << "</td><td>" << r.swipe << "</td>"
-            << "<td>" << r.qr << "</td><td>" << r.cash << "</td></tr>";
+            << "<td>" << r.expense << "</td>"
+            << "<td>" << std::fixed << std::setprecision(2) << r.swipe << "</td>"
+            << "<td>" << std::fixed << std::setprecision(2) << r.qr << "</td>"
+            << "<td>" << std::fixed << std::setprecision(2) << r.cash << "</td></tr>";
+        
+        sumTotal += r.total;
+        sumExpense += ExtractNumber(r.expense);
+        sumSwipe += r.swipe;
+        sumQR += r.qr;
+        sumCash += r.cash;
     }
+    
+    out << "<tr class=\"total-row\"><td></td><td>Total</td>"
+        << "<td>" << std::fixed << std::setprecision(2) << sumTotal << "</td>"
+        << "<td>" << std::fixed << std::setprecision(2) << sumExpense << "</td>"
+        << "<td>" << std::fixed << std::setprecision(2) << sumSwipe << "</td>"
+        << "<td>" << std::fixed << std::setprecision(2) << sumQR << "</td>"
+        << "<td>" << std::fixed << std::setprecision(2) << sumCash << "</td></tr>";
+    
     out << "</table><script>window.onload=function(){window.print();}</script></body></html>";
     out.close();
     ShellExecuteA(hwnd, "open", htmlFile.c_str(), NULL, NULL, SW_SHOWNORMAL);
@@ -236,7 +334,6 @@ void DoBackup(HWND hwnd) {
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
         case WM_CREATE: {
-            // Initialize common controls for ListView
             INITCOMMONCONTROLSEX icex = {0};
             icex.dwSize = sizeof(icex);
             icex.dwICC = ICC_LISTVIEW_CLASSES;
@@ -256,7 +353,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             CreateLabel(hwnd, "Name:", x + lblW + editW + gap, y, lblW, editH);
             hName = CreateEdit(hwnd, x + 2*lblW + editW + gap, y, 180, editH, IDC_NAME);
 
-            // Row 2 - numeric inputs
+            // Row 2
             y += 40;
             const char* labels[] = {"Total:", "Expense:", "Swipe:", "QR:", "Cash:"};
             int ids[] = {IDC_TOTAL, IDC_EXP, IDC_SWIPE, IDC_QR, IDC_CASH};
@@ -265,7 +362,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             for (int i = 0; i < 5; i++) {
                 int cx = x + i * (lblW + editW + gap);
                 CreateLabel(hwnd, labels[i], cx, y, lblW, editH);
-                *(handles[i]) = CreateEdit(hwnd, cx + lblW, y, editW, editH, ids[i]);
+                bool readOnly = (i == 4); // Cash is read-only
+                *(handles[i]) = CreateEdit(hwnd, cx + lblW, y, editW, editH, ids[i], readOnly);
             }
 
             // Buttons row
@@ -293,6 +391,13 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
         case WM_COMMAND: {
             int id = LOWORD(wParam);
+            int code = HIWORD(wParam);
+            
+            // Auto-calculate Cash when inputs change
+            if (code == EN_CHANGE && (id == IDC_TOTAL || id == IDC_EXP || id == IDC_SWIPE || id == IDC_QR)) {
+                RecalculateCash();
+            }
+            
             if (id == IDC_BTN_ADD)     DoAddRecord(hwnd);
             else if (id == IDC_BTN_PRINT)   DoPrintA4(hwnd);
             else if (id == IDC_BTN_BACKUP)  DoBackup(hwnd);
@@ -311,7 +416,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             return 0;
         }
         case WM_SIZE: {
-            // Resize ListView to fit window
             RECT rc;
             GetClientRect(hwnd, &rc);
             MoveWindow(hListView, 20, 230, rc.right - 40, rc.bottom - 250, TRUE);
@@ -333,7 +437,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nShow) {
     wc.hInstance     = hInst;
     wc.hCursor       = LoadCursor(NULL, IDC_ARROW);
     wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-    wc.lpszClassName = "ExpenseAppClass";
+    wc.lpszClassName = "DailyCashEntryClass";
     wc.hIcon         = LoadIcon(NULL, IDI_APPLICATION);
     wc.hIconSm       = LoadIcon(NULL, IDI_APPLICATION);
     RegisterClassExA(&wc);
@@ -342,7 +446,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int nShow) {
     int sw = GetSystemMetrics(SM_CXSCREEN);
     int sh = GetSystemMetrics(SM_CYSCREEN);
 
-    HWND hwnd = CreateWindowExA(0, "ExpenseAppClass", "Expense Manager Pro",
+    HWND hwnd = CreateWindowExA(0, "DailyCashEntryClass", "Daily Cash Entry",
         WS_OVERLAPPEDWINDOW,
         (sw - w) / 2, (sh - h) / 2, w, h,
         NULL, NULL, hInst, NULL);
